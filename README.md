@@ -47,7 +47,7 @@ Keywords:  MAAT, Transformer, Association Discrepancy, Gated Attention, Mamba-SS
 1. Create new virtual environement with Python 3.10 .
 2. Clone the repo.
 3. Install the requirements using: ```pip install -r requirements.txt```.
-4. Download data.
+4. Download data from this [Link](https://drive.google.com/drive/folders/1RaIJQ8esoWuhyphhmMaH-VCDh-WIluRR?usp=sharing)
 5. Train and evaluate. using the scripts in ./scripts folder:
 ```bash
 bash ./scripts/SMD.sh
