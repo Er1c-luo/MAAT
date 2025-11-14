@@ -3,7 +3,6 @@ Authors: Abdellah Zakaria Sellam*, Ilyes Benaissa, Abdelmalik Taleb-Ahmed, Luigi
 Patrono, Cosimo Distante
 [![PWC](https://img.shields.io/endpoint.svg?url=https://paperswithcode.com/badge/maat-mamba-adaptive-anomaly-transformer-with/anomaly-detection-on-smd)](https://paperswithcode.com/sota/anomaly-detection-on-smd?p=maat-mamba-adaptive-anomaly-transformer-with)
 ## Paper
-Paper Accepted and Published 🤩.
 
 You can check our paper now in Engineering Applications of Artificial Intelligence journal in this link: https://doi.org/10.1016/j.engappai.2025.111685
 ## Abstract
