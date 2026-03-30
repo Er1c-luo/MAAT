@@ -17,7 +17,9 @@ def combine_all_evaluation_scores(y_test, pred_labels, anomaly_scores):
     affiliation = pr_from_events(events_pred, events_gt, Trange)
     true_events = get_events(y_test)
     pa_accuracy, pa_precision, pa_recall, pa_f_score = get_adjust_F1PA(y_test, pred_labels)
-    MCC_score = MCC(y_test, pred_labels)
+    #MCC_score = MCC(y_test, pred_labels)
+    #临时注释，加快测试速度
+    MCC_score = None
     vus_results = get_range_vus_roc(y_test, pred_labels, 100) # default slidingWindow = 100
     
     score_list_simple = {

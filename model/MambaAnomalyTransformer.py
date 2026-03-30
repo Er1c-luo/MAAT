@@ -4,6 +4,7 @@ import torch.nn.functional as F
 from mamba_ssm import Mamba
 from .attn import AnomalyAttention, AttentionLayer
 from .embed import DataEmbedding, TokenEmbedding
+from .context_encoder import LightweightContextEncoder
 
 
 class CoGatedAttention(nn.Module):
@@ -86,9 +87,15 @@ class MambaAnomalyTransformer(nn.Module):
                  dropout=0.0, activation='gelu', output_attention=True):
         super(MambaAnomalyTransformer, self).__init__()
         self.output_attention = output_attention
+        self.c_in = 2  # Minimal context feature dim: [sin, cos]
 
         # Encoding
         self.embedding = DataEmbedding(enc_in, d_model, dropout)
+
+        # Context encoder + additive fusion (Version A)
+        self.context_encoder = LightweightContextEncoder(d_in=enc_in + self.c_in, d_ctx=32, nhead=2, dropout=0.1)
+        self.ctx_proj = nn.Linear(32, d_model, bias=True)
+        self.alpha = nn.Parameter(torch.tensor(0.1, dtype=torch.float32))  # learnable fusion strength
 
         # Encoder
         self.encoder = Encoder(
@@ -110,8 +117,17 @@ class MambaAnomalyTransformer(nn.Module):
 
         self.projection = nn.Linear(d_model, c_out, bias=True)
 
-    def forward(self, x):
+    def forward(self, x, c):
         enc_out = self.embedding(x)
+
+        # Build context representation from concatenated raw + context features.
+        x_cat = torch.cat([x, c], dim=-1)
+        z_ctx = self.context_encoder(x_cat)
+        ctx_emb = self.ctx_proj(z_ctx)
+
+        # Additive fusion into the original embedding stream.
+        enc_out = enc_out + self.alpha * ctx_emb
+
         enc_out, series, prior, sigmas = self.encoder(enc_out)
         enc_out = self.projection(enc_out)
 

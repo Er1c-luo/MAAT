@@ -13,6 +13,12 @@ from sklearn.preprocessing import StandardScaler
 import pickle
 
 
+def _build_context(win_size: int) -> np.ndarray:
+    # Minimal explicit temporal context: [L, 2] with sin/cos of phase in window
+    phase = np.arange(win_size, dtype=np.float32) / np.float32(win_size)
+    return np.stack([np.sin(2 * np.pi * phase), np.cos(2 * np.pi * phase)], axis=-1).astype(np.float32)
+
+
 class PSMSegLoader(object):
     def __init__(self, data_path, win_size, step, mode="train"):
         self.mode = mode
@@ -57,16 +63,27 @@ class PSMSegLoader(object):
     def __getitem__(self, index):
         index = index * self.step
         if self.mode == "train":
-            return np.float32(self.train[index:index + self.win_size]), np.float32(self.test_labels[0:self.win_size])
+            x = np.float32(self.train[index:index + self.win_size])
+            context = _build_context(self.win_size)
+            label = np.float32(self.test_labels[0:self.win_size])
+            return x, context, label
         elif (self.mode == 'val'):
-            return np.float32(self.val[index:index + self.win_size]), np.float32(self.test_labels[0:self.win_size])
+            x = np.float32(self.val[index:index + self.win_size])
+            context = _build_context(self.win_size)
+            label = np.float32(self.test_labels[0:self.win_size])
+            return x, context, label
         elif (self.mode == 'test'):
-            return np.float32(self.test[index:index + self.win_size]), np.float32(
-                self.test_labels[index:index + self.win_size])
+            x = np.float32(self.test[index:index + self.win_size])
+            context = _build_context(self.win_size)
+            label = np.float32(self.test_labels[index:index + self.win_size])
+            return x, context, label
         else:
-            return np.float32(self.test[
-                              index // self.step * self.win_size:index // self.step * self.win_size + self.win_size]), np.float32(
-                self.test_labels[index // self.step * self.win_size:index // self.step * self.win_size + self.win_size])
+            start = index // self.step * self.win_size
+            end = start + self.win_size
+            x = np.float32(self.test[start:end])
+            context = _build_context(self.win_size)
+            label = np.float32(self.test_labels[start:end])
+            return x, context, label
 
 
 class MSLSegLoader(object):
@@ -101,16 +118,27 @@ class MSLSegLoader(object):
     def __getitem__(self, index):
         index = index * self.step
         if self.mode == "train":
-            return np.float32(self.train[index:index + self.win_size]), np.float32(self.test_labels[0:self.win_size])
+            x = np.float32(self.train[index:index + self.win_size])
+            context = _build_context(self.win_size)
+            label = np.float32(self.test_labels[0:self.win_size])
+            return x, context, label
         elif (self.mode == 'val'):
-            return np.float32(self.val[index:index + self.win_size]), np.float32(self.test_labels[0:self.win_size])
+            x = np.float32(self.val[index:index + self.win_size])
+            context = _build_context(self.win_size)
+            label = np.float32(self.test_labels[0:self.win_size])
+            return x, context, label
         elif (self.mode == 'test'):
-            return np.float32(self.test[index:index + self.win_size]), np.float32(
-                self.test_labels[index:index + self.win_size])
+            x = np.float32(self.test[index:index + self.win_size])
+            context = _build_context(self.win_size)
+            label = np.float32(self.test_labels[index:index + self.win_size])
+            return x, context, label
         else:
-            return np.float32(self.test[
-                              index // self.step * self.win_size:index // self.step * self.win_size + self.win_size]), np.float32(
-                self.test_labels[index // self.step * self.win_size:index // self.step * self.win_size + self.win_size])
+            start = index // self.step * self.win_size
+            end = start + self.win_size
+            x = np.float32(self.test[start:end])
+            context = _build_context(self.win_size)
+            label = np.float32(self.test_labels[start:end])
+            return x, context, label
 
 
 class SMAPSegLoader(object):
@@ -145,16 +173,27 @@ class SMAPSegLoader(object):
     def __getitem__(self, index):
         index = index * self.step
         if self.mode == "train":
-            return np.float32(self.train[index:index + self.win_size]), np.float32(self.test_labels[0:self.win_size])
+            x = np.float32(self.train[index:index + self.win_size])
+            context = _build_context(self.win_size)
+            label = np.float32(self.test_labels[0:self.win_size])
+            return x, context, label
         elif (self.mode == 'val'):
-            return np.float32(self.val[index:index + self.win_size]), np.float32(self.test_labels[0:self.win_size])
+            x = np.float32(self.val[index:index + self.win_size])
+            context = _build_context(self.win_size)
+            label = np.float32(self.test_labels[0:self.win_size])
+            return x, context, label
         elif (self.mode == 'test'):
-            return np.float32(self.test[index:index + self.win_size]), np.float32(
-                self.test_labels[index:index + self.win_size])
+            x = np.float32(self.test[index:index + self.win_size])
+            context = _build_context(self.win_size)
+            label = np.float32(self.test_labels[index:index + self.win_size])
+            return x, context, label
         else:
-            return np.float32(self.test[
-                              index // self.step * self.win_size:index // self.step * self.win_size + self.win_size]), np.float32(
-                self.test_labels[index // self.step * self.win_size:index // self.step * self.win_size + self.win_size])
+            start = index // self.step * self.win_size
+            end = start + self.win_size
+            x = np.float32(self.test[start:end])
+            context = _build_context(self.win_size)
+            label = np.float32(self.test_labels[start:end])
+            return x, context, label
 
 
 class SMDSegLoader(object):
@@ -187,16 +226,27 @@ class SMDSegLoader(object):
     def __getitem__(self, index):
         index = index * self.step
         if self.mode == "train":
-            return np.float32(self.train[index:index + self.win_size]), np.float32(self.test_labels[0:self.win_size])
+            x = np.float32(self.train[index:index + self.win_size])
+            context = _build_context(self.win_size)
+            label = np.float32(self.test_labels[0:self.win_size])
+            return x, context, label
         elif (self.mode == 'val'):
-            return np.float32(self.val[index:index + self.win_size]), np.float32(self.test_labels[0:self.win_size])
+            x = np.float32(self.val[index:index + self.win_size])
+            context = _build_context(self.win_size)
+            label = np.float32(self.test_labels[0:self.win_size])
+            return x, context, label
         elif (self.mode == 'test'):
-            return np.float32(self.test[index:index + self.win_size]), np.float32(
-                self.test_labels[index:index + self.win_size])
+            x = np.float32(self.test[index:index + self.win_size])
+            context = _build_context(self.win_size)
+            label = np.float32(self.test_labels[index:index + self.win_size])
+            return x, context, label
         else:
-            return np.float32(self.test[
-                              index // self.step * self.win_size:index // self.step * self.win_size + self.win_size]), np.float32(
-                self.test_labels[index // self.step * self.win_size:index // self.step * self.win_size + self.win_size])
+            start = index // self.step * self.win_size
+            end = start + self.win_size
+            x = np.float32(self.test[start:end])
+            context = _build_context(self.win_size)
+            label = np.float32(self.test_labels[start:end])
+            return x, context, label
 
 class SWATSegLoader(Dataset):
     def __init__(self, root_path, win_size, step=1, flag="train"):
@@ -238,16 +288,27 @@ class SWATSegLoader(Dataset):
     def __getitem__(self, index):
         index = index * self.step
         if self.flag == "train":
-            return np.float32(self.train[index:index + self.win_size]), np.float32(self.test_labels[0:self.win_size])
+            x = np.float32(self.train[index:index + self.win_size])
+            context = _build_context(self.win_size)
+            label = np.float32(self.test_labels[0:self.win_size])
+            return x, context, label
         elif (self.flag == 'val'):
-            return np.float32(self.val[index:index + self.win_size]), np.float32(self.test_labels[0:self.win_size])
+            x = np.float32(self.val[index:index + self.win_size])
+            context = _build_context(self.win_size)
+            label = np.float32(self.test_labels[0:self.win_size])
+            return x, context, label
         elif (self.flag == 'test'):
-            return np.float32(self.test[index:index + self.win_size]), np.float32(
-                self.test_labels[index:index + self.win_size])
+            x = np.float32(self.test[index:index + self.win_size])
+            context = _build_context(self.win_size)
+            label = np.float32(self.test_labels[index:index + self.win_size])
+            return x, context, label
         else:
-            return np.float32(self.test[
-                              index // self.step * self.win_size:index // self.step * self.win_size + self.win_size]), np.float32(
-                self.test_labels[index // self.step * self.win_size:index // self.step * self.win_size + self.win_size])
+            start = index // self.step * self.win_size
+            end = start + self.win_size
+            x = np.float32(self.test[start:end])
+            context = _build_context(self.win_size)
+            label = np.float32(self.test_labels[start:end])
+            return x, context, label
             
 class NIPS_TS_SwanSegLoader(object):
     def __init__(self, data_path, win_size, step, mode="train"):
@@ -280,16 +341,27 @@ class NIPS_TS_SwanSegLoader(object):
     def __getitem__(self, index):
         index = index * self.step
         if self.mode == "train":
-            return np.float32(self.train[index:index + self.win_size]), np.float32(self.test_labels[0:self.win_size])
+            x = np.float32(self.train[index:index + self.win_size])
+            context = _build_context(self.win_size)
+            label = np.float32(self.test_labels[0:self.win_size])
+            return x, context, label
         elif (self.mode == 'val'):
-            return np.float32(self.val[index:index + self.win_size]), np.float32(self.test_labels[0:self.win_size])
+            x = np.float32(self.val[index:index + self.win_size])
+            context = _build_context(self.win_size)
+            label = np.float32(self.test_labels[0:self.win_size])
+            return x, context, label
         elif (self.mode == 'test'):
-            return np.float32(self.test[index:index + self.win_size]), np.float32(
-                self.test_labels[index:index + self.win_size])
+            x = np.float32(self.test[index:index + self.win_size])
+            context = _build_context(self.win_size)
+            label = np.float32(self.test_labels[index:index + self.win_size])
+            return x, context, label
         else:
-            return np.float32(self.test[
-                              index // self.step * self.win_size:index // self.step * self.win_size + self.win_size]), np.float32(
-                self.test_labels[index // self.step * self.win_size:index // self.step * self.win_size + self.win_size])
+            start = index // self.step * self.win_size
+            end = start + self.win_size
+            x = np.float32(self.test[start:end])
+            context = _build_context(self.win_size)
+            label = np.float32(self.test_labels[start:end])
+            return x, context, label
 
 class NIPS_TS_WaterSegLoader(object):
     def __init__(self, data_path, win_size, step, mode="train"):
@@ -323,16 +395,27 @@ class NIPS_TS_WaterSegLoader(object):
     def __getitem__(self, index):
         index = index * self.step
         if self.mode == "train":
-            return np.float32(self.train[index:index + self.win_size]), np.float32(self.test_labels[0:self.win_size])
+            x = np.float32(self.train[index:index + self.win_size])
+            context = _build_context(self.win_size)
+            label = np.float32(self.test_labels[0:self.win_size])
+            return x, context, label
         elif (self.mode == 'val'):
-            return np.float32(self.val[index:index + self.win_size]), np.float32(self.test_labels[0:self.win_size])
+            x = np.float32(self.val[index:index + self.win_size])
+            context = _build_context(self.win_size)
+            label = np.float32(self.test_labels[0:self.win_size])
+            return x, context, label
         elif (self.mode == 'test'):
-            return np.float32(self.test[index:index + self.win_size]), np.float32(
-                self.test_labels[index:index + self.win_size])
+            x = np.float32(self.test[index:index + self.win_size])
+            context = _build_context(self.win_size)
+            label = np.float32(self.test_labels[index:index + self.win_size])
+            return x, context, label
         else:
-            return np.float32(self.test[
-                              index // self.step * self.win_size:index // self.step * self.win_size + self.win_size]), np.float32(
-                self.test_labels[index // self.step * self.win_size:index // self.step * self.win_size + self.win_size])
+            start = index // self.step * self.win_size
+            end = start + self.win_size
+            x = np.float32(self.test[start:end])
+            context = _build_context(self.win_size)
+            label = np.float32(self.test_labels[start:end])
+            return x, context, label
                                   
 def get_loader_segment(data_path, batch_size, win_size=100, step=100, mode='train', dataset='KDD'):
     if (dataset == 'SMD'):

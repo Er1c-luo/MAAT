@@ -106,9 +106,17 @@ class Solver(object):
         loss_2 = []
         rec_losses = []  # List to store reconstruction losses
 
-        for i, (input_data, _) in enumerate(vali_loader):
+        for i, batch in enumerate(vali_loader):
+            # Version A dataloader returns (x, c, label); keep backward-compat with (x, label).
+            if isinstance(batch, (list, tuple)) and len(batch) == 3:
+                input_data, context_data, _ = batch
+            else:
+                input_data, _ = batch
+                context_data = None
+
             input = input_data.float().to(self.device)
-            output, series, prior, _ = self.model(input)
+            context = context_data.float().to(self.device) if context_data is not None else None
+            output, series, prior, _ = self.model(input, context)
             series_loss = 0.0
             prior_loss = 0.0
             for u in range(len(prior)):
@@ -155,13 +163,20 @@ class Solver(object):
 
             epoch_time = time.time()
             self.model.train()
-            for i, (input_data, labels) in enumerate(self.train_loader):
+            for i, batch in enumerate(self.train_loader):
+                # Version A dataloader returns (x, c, label); keep backward-compat with (x, label).
+                if isinstance(batch, (list, tuple)) and len(batch) == 3:
+                    input_data, context_data, labels = batch
+                else:
+                    input_data, labels = batch
+                    context_data = None
 
                 self.optimizer.zero_grad()
                 iter_count += 1
                 input = input_data.float().to(self.device)
+                context = context_data.float().to(self.device) if context_data is not None else None
 
-                output, series, prior, _ = self.model(input)
+                output, series, prior, _ = self.model(input, context)
 
                 # calculate Association discrepancy
                 series_loss = 0.0
@@ -228,9 +243,17 @@ class Solver(object):
 
         # (1) stastic on the train set
         attens_energy = []
-        for i, (input_data, labels) in enumerate(self.train_loader):
+        for i, batch in enumerate(self.train_loader):
+            # Version A dataloader returns (x, c, label); keep backward-compat with (x, label).
+            if isinstance(batch, (list, tuple)) and len(batch) == 3:
+                input_data, context_data, labels = batch
+            else:
+                input_data, labels = batch
+                context_data = None
+
             input = input_data.float().to(self.device)
-            output, series, prior, _ = self.model(input)
+            context = context_data.float().to(self.device) if context_data is not None else None
+            output, series, prior, _ = self.model(input, context)
             loss = torch.mean(criterion(input, output), dim=-1)
             series_loss = 0.0
             prior_loss = 0.0
@@ -262,9 +285,17 @@ class Solver(object):
 
         # (2) find the threshold
         attens_energy = []
-        for i, (input_data, labels) in enumerate(self.thre_loader):
+        for i, batch in enumerate(self.thre_loader):
+            # Version A dataloader returns (x, c, label); keep backward-compat with (x, label).
+            if isinstance(batch, (list, tuple)) and len(batch) == 3:
+                input_data, context_data, labels = batch
+            else:
+                input_data, labels = batch
+                context_data = None
+
             input = input_data.float().to(self.device)
-            output, series, prior, _ = self.model(input)
+            context = context_data.float().to(self.device) if context_data is not None else None
+            output, series, prior, _ = self.model(input, context)
 
             loss = torch.mean(criterion(input, output), dim=-1)
 
@@ -302,9 +333,17 @@ class Solver(object):
         # (3) evaluation on the test set
         test_labels = []
         attens_energy = []
-        for i, (input_data, labels) in enumerate(self.thre_loader):
+        for i, batch in enumerate(self.thre_loader):
+            # Version A dataloader returns (x, c, label); keep backward-compat with (x, label).
+            if isinstance(batch, (list, tuple)) and len(batch) == 3:
+                input_data, context_data, labels = batch
+            else:
+                input_data, labels = batch
+                context_data = None
+
             input = input_data.float().to(self.device)
-            output, series, prior, _ = self.model(input)
+            context = context_data.float().to(self.device) if context_data is not None else None
+            output, series, prior, _ = self.model(input, context)
 
             loss = torch.mean(criterion(input, output), dim=-1)
 
