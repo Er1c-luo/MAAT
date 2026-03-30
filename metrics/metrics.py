@@ -27,7 +27,7 @@ def combine_all_evaluation_scores(y_test, pred_labels, anomaly_scores):
                   "pa_precision":pa_precision, 
                   "pa_recall":pa_recall, 
                   "pa_f_score":pa_f_score,
-                  "MCC_score":MCC_score, 
+                  #"MCC_score":MCC_score, 
                   "Affiliation precision": affiliation['precision'], 
                   "Affiliation recall": affiliation['recall'],
                   "R_AUC_ROC": vus_results["R_AUC_ROC"], 
