@@ -42,6 +42,13 @@ if __name__ == '__main__':
     parser.add_argument('--anormly_ratio', type=float, default=4.00)
     parser.add_argument('--gpu_index', type=int, default=0, help='Index of the GPU to use')
     parser.add_argument('--multi_gpu', type=str2bool, default=True, help='Enable multi-GPU training')
+    # Adaptive threshold (used when solver reads these flags; default keeps legacy fixed-percentile path)
+    parser.add_argument('--use_adaptive_threshold', type=str2bool, default=False,
+                        help='If true, use rolling/window thresholding (requires solver support)')
+    parser.add_argument('--threshold_window', type=int, default=200,
+                        help='Window length for adaptive threshold statistics')
+    parser.add_argument('--threshold_quantile', type=float, default=0.995,
+                        help='Quantile for adaptive threshold (e.g. 0.995)')
     config = parser.parse_args()
 
     args = vars(config)

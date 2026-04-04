@@ -20,6 +20,20 @@ def adjust_learning_rate(optimizer, epoch, lr_):
         print('Updating learning rate to {}'.format(lr))
 
 
+def sliding_quantile_threshold(scores, window_size=200, quantile=0.995):
+    """
+    For each index t, threshold[t] = quantile of scores in the last window_size values
+    ending at t (past and current only; shorter prefix when t < window_size - 1).
+    """
+    scores = np.asarray(scores, dtype=np.float64).reshape(-1)
+    n = len(scores)
+    thresholds = np.empty(n, dtype=np.float64)
+    for t in range(n):
+        start = max(0, t - window_size + 1)
+        thresholds[t] = np.quantile(scores[start : t + 1], quantile)
+    return thresholds
+
+
 class EarlyStopping:
     def __init__(self, patience=7, verbose=False, dataset_name='', delta=0):
         self.patience = patience
@@ -238,6 +252,11 @@ class Solver(object):
         temperature = 50
 
         print("======================TEST MODE======================")
+        use_adapt = getattr(self, 'use_adaptive_threshold', False)
+        tw = getattr(self, 'threshold_window', 200)
+        tq = getattr(self, 'threshold_quantile', 0.995)
+        print("use_adaptive_threshold: {}, threshold_window: {}, threshold_quantile: {}".format(
+            use_adapt, tw, tq))
 
         criterion = nn.MSELoss(reduce=False)
 
@@ -378,7 +397,14 @@ class Solver(object):
         test_energy = np.array(attens_energy)
         test_labels = np.array(test_labels)
 
-        pred = (test_energy > thresh).astype(int)
+        # Fixed global percentile vs. per-timestep sliding quantile (same test_energy in both cases)
+        if use_adapt:
+            thresholds = sliding_quantile_threshold(test_energy, window_size=tw, quantile=tq)
+            print("Adaptive threshold stats: mean={:.6f}, first_k={}".format(
+                float(np.mean(thresholds)), thresholds[: min(5, len(thresholds))]))
+            pred = (test_energy > thresholds).astype(int)
+        else:
+            pred = (test_energy > thresh).astype(int)
         gt = test_labels.astype(int)
         matrix = [137]
         scores_simple = combine_all_evaluation_scores(pred, gt, test_energy)
