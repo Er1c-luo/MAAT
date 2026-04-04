@@ -34,6 +34,32 @@ def sliding_quantile_threshold(scores, window_size=200, quantile=0.995):
     return thresholds
 
 
+def phase_bucket_threshold(scores, phase_period, num_buckets, quantile, min_bucket_samples):
+    """
+    Per-t causal quantile within the same phase bucket (bucket from t % phase_period).
+    If not enough samples in that bucket yet, use global quantile over scores[0:t+1].
+    """
+    scores = np.asarray(scores, dtype=np.float64).reshape(-1)
+    n = len(scores)
+    thresholds = np.empty(n, dtype=np.float64)
+    bucket_scores = [[] for _ in range(num_buckets)]
+
+    def bucket_id(t):
+        pos = (t % phase_period) * num_buckets / float(phase_period)
+        b = int(pos)
+        return min(max(b, 0), num_buckets - 1)
+
+    for t in range(n):
+        b = bucket_id(t)
+        bucket_scores[b].append(scores[t])
+        same = bucket_scores[b]
+        if len(same) >= min_bucket_samples:
+            thresholds[t] = np.quantile(np.asarray(same, dtype=np.float64), quantile)
+        else:
+            thresholds[t] = np.quantile(scores[0 : t + 1], quantile)
+    return thresholds
+
+
 class EarlyStopping:
     def __init__(self, patience=7, verbose=False, dataset_name='', delta=0):
         self.patience = patience
@@ -255,8 +281,12 @@ class Solver(object):
         use_adapt = getattr(self, 'use_adaptive_threshold', False)
         tw = getattr(self, 'threshold_window', 200)
         tq = getattr(self, 'threshold_quantile', 0.995)
-        print("use_adaptive_threshold: {}, threshold_window: {}, threshold_quantile: {}".format(
-            use_adapt, tw, tq))
+        thr_mode = getattr(self, 'threshold_mode', 'fixed')
+        # Legacy: use_adaptive_threshold=True with default mode fixed -> sliding
+        if thr_mode == 'fixed' and use_adapt:
+            thr_mode = 'sliding'
+        print("threshold_mode: {}, use_adaptive_threshold (legacy): {}".format(thr_mode, use_adapt))
+        print("threshold_window: {}, threshold_quantile: {}".format(tw, tq))
 
         criterion = nn.MSELoss(reduce=False)
 
@@ -397,10 +427,20 @@ class Solver(object):
         test_energy = np.array(attens_energy)
         test_labels = np.array(test_labels)
 
-        # Fixed global percentile vs. per-timestep sliding quantile (same test_energy in both cases)
-        if use_adapt:
+        # fixed: global scalar thresh | sliding: trailing quantile | phase_bucket: causal per-bucket quantile
+        if thr_mode == 'sliding':
             thresholds = sliding_quantile_threshold(test_energy, window_size=tw, quantile=tq)
-            print("Adaptive threshold stats: mean={:.6f}, first_k={}".format(
+            print("sliding threshold: mean={:.6f}, first_k={}".format(
+                float(np.mean(thresholds)), thresholds[: min(5, len(thresholds))]))
+            pred = (test_energy > thresholds).astype(int)
+        elif thr_mode == 'phase_bucket':
+            pp = getattr(self, 'phase_period', 0) or self.win_size
+            nb = getattr(self, 'phase_num_buckets', 8)
+            min_s = getattr(self, 'phase_min_bucket_samples', 3)
+            print("phase_bucket: period={}, num_buckets={}, min_samples={}".format(pp, nb, min_s))
+            thresholds = phase_bucket_threshold(
+                test_energy, phase_period=pp, num_buckets=nb, quantile=tq, min_bucket_samples=min_s)
+            print("phase_bucket threshold: mean={:.6f}, first_k={}".format(
                 float(np.mean(thresholds)), thresholds[: min(5, len(thresholds))]))
             pred = (test_energy > thresholds).astype(int)
         else:

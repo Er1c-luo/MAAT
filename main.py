@@ -49,6 +49,15 @@ if __name__ == '__main__':
                         help='Window length for adaptive threshold statistics')
     parser.add_argument('--threshold_quantile', type=float, default=0.995,
                         help='Quantile for adaptive threshold (e.g. 0.995)')
+    parser.add_argument('--threshold_mode', type=str, default='fixed',
+                        choices=['fixed', 'sliding', 'phase_bucket'],
+                        help='fixed=global percentile; sliding=rolling quantile; phase_bucket=causal per-phase quantile')
+    parser.add_argument('--phase_period', type=int, default=0,
+                        help='Phase cycle length for phase_bucket (0 = use win_size)')
+    parser.add_argument('--phase_num_buckets', type=int, default=8,
+                        help='Number of phase buckets along one cycle')
+    parser.add_argument('--phase_min_bucket_samples', type=int, default=3,
+                        help='Min samples in bucket before using bucket quantile; else global fallback')
     config = parser.parse_args()
 
     args = vars(config)
