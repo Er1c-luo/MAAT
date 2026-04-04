@@ -34,26 +34,28 @@ def sliding_quantile_threshold(scores, window_size=200, quantile=0.995):
     return thresholds
 
 
-def phase_bucket_threshold(scores, phase_period, num_buckets, quantile, min_bucket_samples):
+def phase_bucket_threshold(scores, win_size, num_buckets=10, quantile=0.995, min_count=20):
     """
-    Per-t causal quantile within the same phase bucket (bucket from t % phase_period).
-    If not enough samples in that bucket yet, use global quantile over scores[0:t+1].
+    Minimal phase-aware threshold: phase_idx = t % win_size, bucket over [0, win_size-1] -> num_buckets.
+    Causal only; threshold[t] from same-bucket history including t, else global quantile on scores[0:t+1].
     """
     scores = np.asarray(scores, dtype=np.float64).reshape(-1)
     n = len(scores)
+    ws = max(int(win_size), 1)
+    nb = max(int(num_buckets), 1)
     thresholds = np.empty(n, dtype=np.float64)
-    bucket_scores = [[] for _ in range(num_buckets)]
+    bucket_scores = [[] for _ in range(nb)]
 
     def bucket_id(t):
-        pos = (t % phase_period) * num_buckets / float(phase_period)
-        b = int(pos)
-        return min(max(b, 0), num_buckets - 1)
+        phase_idx = t % ws
+        b = int(phase_idx * nb / float(ws))
+        return min(max(b, 0), nb - 1)
 
     for t in range(n):
         b = bucket_id(t)
         bucket_scores[b].append(scores[t])
         same = bucket_scores[b]
-        if len(same) >= min_bucket_samples:
+        if len(same) >= min_count:
             thresholds[t] = np.quantile(np.asarray(same, dtype=np.float64), quantile)
         else:
             thresholds[t] = np.quantile(scores[0 : t + 1], quantile)
@@ -285,7 +287,7 @@ class Solver(object):
         # Legacy: use_adaptive_threshold=True with default mode fixed -> sliding
         if thr_mode == 'fixed' and use_adapt:
             thr_mode = 'sliding'
-        print("threshold_mode: {}, use_adaptive_threshold (legacy): {}".format(thr_mode, use_adapt))
+        print("threshold_mode: {} | legacy use_adaptive_threshold: {}".format(thr_mode, use_adapt))
         print("threshold_window: {}, threshold_quantile: {}".format(tw, tq))
 
         criterion = nn.MSELoss(reduce=False)
@@ -427,23 +429,31 @@ class Solver(object):
         test_energy = np.array(attens_energy)
         test_labels = np.array(test_labels)
 
-        # fixed: global scalar thresh | sliding: trailing quantile | phase_bucket: causal per-bucket quantile
+        # Per-mode pred: fixed = scalar thresh; sliding / phase_bucket = per-t thresholds
         if thr_mode == 'sliding':
             thresholds = sliding_quantile_threshold(test_energy, window_size=tw, quantile=tq)
-            print("sliding threshold: mean={:.6f}, first_k={}".format(
+            print("[sliding] thresholds mean={:.6f}, head={}".format(
                 float(np.mean(thresholds)), thresholds[: min(5, len(thresholds))]))
             pred = (test_energy > thresholds).astype(int)
         elif thr_mode == 'phase_bucket':
-            pp = getattr(self, 'phase_period', 0) or self.win_size
-            nb = getattr(self, 'phase_num_buckets', 8)
-            min_s = getattr(self, 'phase_min_bucket_samples', 3)
-            print("phase_bucket: period={}, num_buckets={}, min_samples={}".format(pp, nb, min_s))
+            # Params from config (main.py): phase_num_buckets, threshold_quantile, phase_min_count
+            nb = getattr(self, 'phase_num_buckets', 10)
+            ph_q = getattr(self, 'threshold_quantile', 0.995)
+            ph_min = getattr(self, 'phase_min_count', 20)
+            print("[phase_bucket] win_size={}, num_buckets={}, quantile={}, min_count={}".format(
+                self.win_size, nb, ph_q, ph_min))
             thresholds = phase_bucket_threshold(
-                test_energy, phase_period=pp, num_buckets=nb, quantile=tq, min_bucket_samples=min_s)
-            print("phase_bucket threshold: mean={:.6f}, first_k={}".format(
+                test_energy,
+                win_size=self.win_size,
+                num_buckets=nb,
+                quantile=ph_q,
+                min_count=ph_min,
+            )
+            print("[phase_bucket] thresholds mean={:.6f}, head={}".format(
                 float(np.mean(thresholds)), thresholds[: min(5, len(thresholds))]))
             pred = (test_energy > thresholds).astype(int)
         else:
+            # fixed: global percentile on combined_energy (train + thre_loader stats)
             pred = (test_energy > thresh).astype(int)
         gt = test_labels.astype(int)
         matrix = [137]
