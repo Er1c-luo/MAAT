@@ -4,6 +4,7 @@ import torch.nn.functional as F
 from mamba_ssm import Mamba
 from .attn import AnomalyAttention, AttentionLayer
 from .embed import DataEmbedding, TokenEmbedding
+from .temporal_preencoder import LightweightTemporalPreEncoder
 
 
 class CoGatedAttention(nn.Module):
@@ -90,6 +91,14 @@ class MambaAnomalyTransformer(nn.Module):
         # Encoding
         self.embedding = DataEmbedding(enc_in, d_model, dropout)
 
+        # Generic temporal pre-encoder (X only) + map to d_model for additive fusion before Encoder
+        d_pre = 32
+        self.temporal_preencoder = LightweightTemporalPreEncoder(
+            d_in=enc_in, d_pre=d_pre, nhead=2, dropout=0.1
+        )
+        self.pre_proj = nn.Linear(d_pre, d_model)
+        self.alpha = nn.Parameter(torch.tensor(0.1, dtype=torch.float32))
+
         # Encoder
         self.encoder = Encoder(
             [
@@ -112,6 +121,9 @@ class MambaAnomalyTransformer(nn.Module):
 
     def forward(self, x):
         enc_out = self.embedding(x)
+        h = self.temporal_preencoder(x)
+        h_emb = self.pre_proj(h)
+        enc_out = enc_out + self.alpha * h_emb
         enc_out, series, prior, sigmas = self.encoder(enc_out)
         enc_out = self.projection(enc_out)
 
