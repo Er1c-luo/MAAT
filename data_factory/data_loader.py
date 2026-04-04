@@ -19,23 +19,52 @@ def _build_context(win_size: int) -> np.ndarray:
     return np.stack([np.sin(2 * np.pi * phase), np.cos(2 * np.pi * phase)], axis=-1).astype(np.float32)
 
 
+def _sin_cos_phase(phase_01: np.ndarray) -> np.ndarray:
+    """phase_01: [L] in [0,1) -> [L, 2] with sin/cos(2π phase)."""
+    p = np.asarray(phase_01, dtype=np.float32)
+    return np.stack([np.sin(2 * np.pi * p), np.cos(2 * np.pi * p)], axis=-1).astype(np.float32)
+
+
+def _context_from_timestamps_minutes(ts_minutes: np.ndarray, period_min: float = 1440.0) -> np.ndarray:
+    """Real-time daily cycle: phase = (timestamp_min mod period) / period -> [L, 2]."""
+    ts = np.asarray(ts_minutes, dtype=np.float64)
+    phase = (np.mod(ts, period_min) / np.float64(period_min)).astype(np.float32)
+    return _sin_cos_phase(phase)
+
+
+def _context_smd_global_day_index(start_idx: int, win_size: int, period: int = 1440) -> np.ndarray:
+    """SMD has no CSV time; use global timestep index mod T (minutes/day) as synthetic day phase."""
+    t = np.arange(start_idx, start_idx + win_size, dtype=np.float64)
+    phase = (np.mod(t, float(period)) / np.float64(period)).astype(np.float32)
+    return _sin_cos_phase(phase)
+
+
 class PSMSegLoader(object):
     def __init__(self, data_path, win_size, step, mode="train"):
         self.mode = mode
         self.step = step
         self.win_size = win_size
         self.scaler = StandardScaler()
-        data = pd.read_csv(data_path + '/train.csv')
-        data = data.values[:, 1:]
+        # PSM: align features with timestamp_(min) (or first column) for Version A context
+        train_df = pd.read_csv(data_path + '/train.csv')
+        if 'timestamp_(min)' in train_df.columns:
+            ts_name = 'timestamp_(min)'
+        else:
+            ts_name = train_df.columns[0]
+        self.train_ts = train_df[ts_name].to_numpy(dtype=np.float64)
+        feat_train = train_df.drop(columns=[ts_name]).values
+        feat_train = np.nan_to_num(feat_train)
 
-        data = np.nan_to_num(data)
+        self.scaler.fit(feat_train)
+        data = self.scaler.transform(feat_train)
 
-        self.scaler.fit(data)
-        data = self.scaler.transform(data)
-        test_data = pd.read_csv(data_path + '/test.csv')
-
-        test_data = test_data.values[:, 1:]
-        test_data = np.nan_to_num(test_data)
+        test_df = pd.read_csv(data_path + '/test.csv')
+        if 'timestamp_(min)' in test_df.columns:
+            ts_name_te = 'timestamp_(min)'
+        else:
+            ts_name_te = test_df.columns[0]
+        self.test_ts = test_df[ts_name_te].to_numpy(dtype=np.float64)
+        test_data = np.nan_to_num(test_df.drop(columns=[ts_name_te]).values)
 
         self.test = self.scaler.transform(test_data)
 
@@ -64,24 +93,24 @@ class PSMSegLoader(object):
         index = index * self.step
         if self.mode == "train":
             x = np.float32(self.train[index:index + self.win_size])
-            context = _build_context(self.win_size)
+            context = _context_from_timestamps_minutes(self.train_ts[index:index + self.win_size])
             label = np.float32(self.test_labels[0:self.win_size])
             return x, context, label
         elif (self.mode == 'val'):
             x = np.float32(self.val[index:index + self.win_size])
-            context = _build_context(self.win_size)
+            context = _context_from_timestamps_minutes(self.test_ts[index:index + self.win_size])
             label = np.float32(self.test_labels[0:self.win_size])
             return x, context, label
         elif (self.mode == 'test'):
             x = np.float32(self.test[index:index + self.win_size])
-            context = _build_context(self.win_size)
+            context = _context_from_timestamps_minutes(self.test_ts[index:index + self.win_size])
             label = np.float32(self.test_labels[index:index + self.win_size])
             return x, context, label
         else:
             start = index // self.step * self.win_size
             end = start + self.win_size
             x = np.float32(self.test[start:end])
-            context = _build_context(self.win_size)
+            context = _context_from_timestamps_minutes(self.test_ts[start:end])
             label = np.float32(self.test_labels[start:end])
             return x, context, label
 
@@ -209,8 +238,11 @@ class SMDSegLoader(object):
         self.test = self.scaler.transform(test_data)
         self.train = data
         data_len = len(self.train)
-        self.val = self.train[(int)(data_len * 0.8):]
+        self._val_start = int(data_len * 0.8)
+        self.val = self.train[self._val_start:]
         self.test_labels = np.load(data_path + "/SMD_test_label.npy")
+        # Synthetic global time index for test split (after train) for T=1440 phase
+        self._test_time_offset = len(self.train)
 
     def __len__(self):
 
@@ -227,24 +259,28 @@ class SMDSegLoader(object):
         index = index * self.step
         if self.mode == "train":
             x = np.float32(self.train[index:index + self.win_size])
-            context = _build_context(self.win_size)
+            # Global day-length cycle T=1440 (minute slots) on series index — no raw timestamps in .npy
+            context = _context_smd_global_day_index(index, self.win_size, period=1440)
             label = np.float32(self.test_labels[0:self.win_size])
             return x, context, label
         elif (self.mode == 'val'):
             x = np.float32(self.val[index:index + self.win_size])
-            context = _build_context(self.win_size)
+            g0 = self._val_start + index
+            context = _context_smd_global_day_index(g0, self.win_size, period=1440)
             label = np.float32(self.test_labels[0:self.win_size])
             return x, context, label
         elif (self.mode == 'test'):
             x = np.float32(self.test[index:index + self.win_size])
-            context = _build_context(self.win_size)
+            g0 = self._test_time_offset + index
+            context = _context_smd_global_day_index(g0, self.win_size, period=1440)
             label = np.float32(self.test_labels[index:index + self.win_size])
             return x, context, label
         else:
             start = index // self.step * self.win_size
             end = start + self.win_size
             x = np.float32(self.test[start:end])
-            context = _build_context(self.win_size)
+            g0 = self._test_time_offset + start
+            context = _context_smd_global_day_index(g0, self.win_size, period=1440)
             label = np.float32(self.test_labels[start:end])
             return x, context, label
 
