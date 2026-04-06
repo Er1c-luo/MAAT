@@ -4,6 +4,7 @@ import torch.nn.functional as F
 from mamba_ssm import Mamba
 from .attn import AnomalyAttention, AttentionLayer
 from .embed import DataEmbedding, TokenEmbedding
+from .context_branch_encoder import LightweightContextBranchEncoder
 
 
 class CoGatedAttention(nn.Module):
@@ -90,6 +91,12 @@ class MambaAnomalyTransformer(nn.Module):
         # Encoding
         self.embedding = DataEmbedding(enc_in, d_model, dropout)
 
+        # Pure context branch (Version B): C -> z_c -> FiLM params on x_emb
+        d_ctx = 32
+        self.context_encoder = LightweightContextBranchEncoder(c_dim=2, d_ctx=d_ctx, nhead=2, dropout=0.1)
+        self.gamma_proj = nn.Linear(d_ctx, d_model)
+        self.beta_proj = nn.Linear(d_ctx, d_model)
+
         # Encoder
         self.encoder = Encoder(
             [
@@ -110,8 +117,15 @@ class MambaAnomalyTransformer(nn.Module):
 
         self.projection = nn.Linear(d_model, c_out, bias=True)
 
-    def forward(self, x):
-        enc_out = self.embedding(x)
+    def forward(self, x, c):
+        x_emb = self.embedding(x)
+
+        # Context-only encoding, then one-shot FiLM modulation before MAAT encoder.
+        z_c = self.context_encoder(c)
+        gamma = self.gamma_proj(z_c)
+        beta = self.beta_proj(z_c)
+        enc_out = x_emb * (1.0 + gamma) + beta
+
         enc_out, series, prior, sigmas = self.encoder(enc_out)
         enc_out = self.projection(enc_out)
 
