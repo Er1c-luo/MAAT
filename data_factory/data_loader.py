@@ -19,6 +19,13 @@ def _build_context(win_size: int) -> np.ndarray:
     return np.stack([np.sin(2 * np.pi * phase), np.cos(2 * np.pi * phase)], axis=-1).astype(np.float32)
 
 
+def _build_global_context(start_idx: int, win_size: int, period: int = 1440) -> np.ndarray:
+    # Global-time phase context: phase(t) = (global_index mod T) / T, with T=1440 for SMD.
+    t = np.arange(start_idx, start_idx + win_size, dtype=np.float32)
+    phase = np.mod(t, np.float32(period)) / np.float32(period)
+    return np.stack([np.sin(2 * np.pi * phase), np.cos(2 * np.pi * phase)], axis=-1).astype(np.float32)
+
+
 class PSMSegLoader(object):
     def __init__(self, data_path, win_size, step, mode="train"):
         self.mode = mode
@@ -91,6 +98,8 @@ class MSLSegLoader(object):
         self.mode = mode
         self.step = step
         self.win_size = win_size
+        # MSL minimal global-phase setup: no explicit timestamp, use global index with period T.
+        self.period_T = 1440
         self.scaler = StandardScaler()
         data = np.load(data_path + "/MSL_train.npy")
         self.scaler.fit(data)
@@ -100,6 +109,7 @@ class MSLSegLoader(object):
 
         self.train = data
         self.val = self.test
+        self._test_time_offset = len(self.train)
         self.test_labels = np.load(data_path + "/MSL_test_label.npy")
         print("test:", self.test.shape)
         print("train:", self.train.shape)
@@ -119,24 +129,24 @@ class MSLSegLoader(object):
         index = index * self.step
         if self.mode == "train":
             x = np.float32(self.train[index:index + self.win_size])
-            context = _build_context(self.win_size)
+            context = _build_global_context(index, self.win_size, period=self.period_T)
             label = np.float32(self.test_labels[0:self.win_size])
             return x, context, label
         elif (self.mode == 'val'):
             x = np.float32(self.val[index:index + self.win_size])
-            context = _build_context(self.win_size)
+            context = _build_global_context(self._test_time_offset + index, self.win_size, period=self.period_T)
             label = np.float32(self.test_labels[0:self.win_size])
             return x, context, label
         elif (self.mode == 'test'):
             x = np.float32(self.test[index:index + self.win_size])
-            context = _build_context(self.win_size)
+            context = _build_global_context(self._test_time_offset + index, self.win_size, period=self.period_T)
             label = np.float32(self.test_labels[index:index + self.win_size])
             return x, context, label
         else:
             start = index // self.step * self.win_size
             end = start + self.win_size
             x = np.float32(self.test[start:end])
-            context = _build_context(self.win_size)
+            context = _build_global_context(self._test_time_offset + start, self.win_size, period=self.period_T)
             label = np.float32(self.test_labels[start:end])
             return x, context, label
 
@@ -209,7 +219,10 @@ class SMDSegLoader(object):
         self.test = self.scaler.transform(test_data)
         self.train = data
         data_len = len(self.train)
-        self.val = self.train[(int)(data_len * 0.8):]
+        self._val_start = int(data_len * 0.8)
+        self.val = self.train[self._val_start:]
+        # Treat test split as continuing global time after train.
+        self._test_time_offset = len(self.train)
         self.test_labels = np.load(data_path + "/SMD_test_label.npy")
 
     def __len__(self):
@@ -227,24 +240,24 @@ class SMDSegLoader(object):
         index = index * self.step
         if self.mode == "train":
             x = np.float32(self.train[index:index + self.win_size])
-            context = _build_context(self.win_size)
+            context = _build_global_context(index, self.win_size, period=1440)
             label = np.float32(self.test_labels[0:self.win_size])
             return x, context, label
         elif (self.mode == 'val'):
             x = np.float32(self.val[index:index + self.win_size])
-            context = _build_context(self.win_size)
+            context = _build_global_context(self._val_start + index, self.win_size, period=1440)
             label = np.float32(self.test_labels[0:self.win_size])
             return x, context, label
         elif (self.mode == 'test'):
             x = np.float32(self.test[index:index + self.win_size])
-            context = _build_context(self.win_size)
+            context = _build_global_context(self._test_time_offset + index, self.win_size, period=1440)
             label = np.float32(self.test_labels[index:index + self.win_size])
             return x, context, label
         else:
             start = index // self.step * self.win_size
             end = start + self.win_size
             x = np.float32(self.test[start:end])
-            context = _build_context(self.win_size)
+            context = _build_global_context(self._test_time_offset + start, self.win_size, period=1440)
             label = np.float32(self.test_labels[start:end])
             return x, context, label
 
