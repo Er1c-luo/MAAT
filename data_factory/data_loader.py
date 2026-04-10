@@ -26,22 +26,47 @@ def _build_global_context(start_idx: int, win_size: int, period: int = 1440) -> 
     return np.stack([np.sin(2 * np.pi * phase), np.cos(2 * np.pi * phase)], axis=-1).astype(np.float32)
 
 
+def _build_global_multiscale_context(start_idx: int, win_size: int, period1: int = 1440, period2: int = 720) -> np.ndarray:
+    # Global-time multiscale context: two periodic views (T1, T2) -> [L, 4].
+    t = np.arange(start_idx, start_idx + win_size, dtype=np.float32)
+    phase1 = np.mod(t, np.float32(period1)) / np.float32(period1)
+    phase2 = np.mod(t, np.float32(period2)) / np.float32(period2)
+    return np.stack([
+        np.sin(2 * np.pi * phase1), np.cos(2 * np.pi * phase1),
+        np.sin(2 * np.pi * phase2), np.cos(2 * np.pi * phase2),
+    ], axis=-1).astype(np.float32)
+
+
+def _build_psm_timestamp_context(ts_min: np.ndarray) -> np.ndarray:
+    # PSM explicit time semantics: day (1440 min) + half-day (720 min), output [L, 4].
+    ts = np.asarray(ts_min, dtype=np.float32)
+    phase_day = np.mod(ts, np.float32(1440.0)) / np.float32(1440.0)
+    phase_halfday = np.mod(ts, np.float32(720.0)) / np.float32(720.0)
+    return np.stack([
+        np.sin(2 * np.pi * phase_day), np.cos(2 * np.pi * phase_day),
+        np.sin(2 * np.pi * phase_halfday), np.cos(2 * np.pi * phase_halfday),
+    ], axis=-1).astype(np.float32)
+
+
 class PSMSegLoader(object):
     def __init__(self, data_path, win_size, step, mode="train"):
         self.mode = mode
         self.step = step
         self.win_size = win_size
         self.scaler = StandardScaler()
-        data = pd.read_csv(data_path + '/train.csv')
-        data = data.values[:, 1:]
-
+        train_df = pd.read_csv(data_path + '/train.csv')
+        # Reuse timestamp_(min) when available; otherwise fallback to the first column as time index.
+        ts_col = 'timestamp_(min)' if 'timestamp_(min)' in train_df.columns else train_df.columns[0]
+        self.train_ts_min = pd.to_numeric(train_df[ts_col], errors='coerce').fillna(0.0).to_numpy(dtype=np.float32)
+        data = train_df.drop(columns=[ts_col]).values
         data = np.nan_to_num(data)
 
         self.scaler.fit(data)
         data = self.scaler.transform(data)
-        test_data = pd.read_csv(data_path + '/test.csv')
-
-        test_data = test_data.values[:, 1:]
+        test_df = pd.read_csv(data_path + '/test.csv')
+        ts_col_test = 'timestamp_(min)' if 'timestamp_(min)' in test_df.columns else test_df.columns[0]
+        self.test_ts_min = pd.to_numeric(test_df[ts_col_test], errors='coerce').fillna(0.0).to_numpy(dtype=np.float32)
+        test_data = test_df.drop(columns=[ts_col_test]).values
         test_data = np.nan_to_num(test_data)
 
         self.test = self.scaler.transform(test_data)
@@ -71,24 +96,24 @@ class PSMSegLoader(object):
         index = index * self.step
         if self.mode == "train":
             x = np.float32(self.train[index:index + self.win_size])
-            context = _build_context(self.win_size)
+            context = _build_psm_timestamp_context(self.train_ts_min[index:index + self.win_size])
             label = np.float32(self.test_labels[0:self.win_size])
             return x, context, label
         elif (self.mode == 'val'):
             x = np.float32(self.val[index:index + self.win_size])
-            context = _build_context(self.win_size)
+            context = _build_psm_timestamp_context(self.test_ts_min[index:index + self.win_size])
             label = np.float32(self.test_labels[0:self.win_size])
             return x, context, label
         elif (self.mode == 'test'):
             x = np.float32(self.test[index:index + self.win_size])
-            context = _build_context(self.win_size)
+            context = _build_psm_timestamp_context(self.test_ts_min[index:index + self.win_size])
             label = np.float32(self.test_labels[index:index + self.win_size])
             return x, context, label
         else:
             start = index // self.step * self.win_size
             end = start + self.win_size
             x = np.float32(self.test[start:end])
-            context = _build_context(self.win_size)
+            context = _build_psm_timestamp_context(self.test_ts_min[start:end])
             label = np.float32(self.test_labels[start:end])
             return x, context, label
 
@@ -240,24 +265,24 @@ class SMDSegLoader(object):
         index = index * self.step
         if self.mode == "train":
             x = np.float32(self.train[index:index + self.win_size])
-            context = _build_global_context(index, self.win_size, period=1440)
+            context = _build_global_multiscale_context(index, self.win_size, period1=1440, period2=720)
             label = np.float32(self.test_labels[0:self.win_size])
             return x, context, label
         elif (self.mode == 'val'):
             x = np.float32(self.val[index:index + self.win_size])
-            context = _build_global_context(self._val_start + index, self.win_size, period=1440)
+            context = _build_global_multiscale_context(self._val_start + index, self.win_size, period1=1440, period2=720)
             label = np.float32(self.test_labels[0:self.win_size])
             return x, context, label
         elif (self.mode == 'test'):
             x = np.float32(self.test[index:index + self.win_size])
-            context = _build_global_context(self._test_time_offset + index, self.win_size, period=1440)
+            context = _build_global_multiscale_context(self._test_time_offset + index, self.win_size, period1=1440, period2=720)
             label = np.float32(self.test_labels[index:index + self.win_size])
             return x, context, label
         else:
             start = index // self.step * self.win_size
             end = start + self.win_size
             x = np.float32(self.test[start:end])
-            context = _build_global_context(self._test_time_offset + start, self.win_size, period=1440)
+            context = _build_global_multiscale_context(self._test_time_offset + start, self.win_size, period1=1440, period2=720)
             label = np.float32(self.test_labels[start:end])
             return x, context, label
 
@@ -280,7 +305,10 @@ class SWATSegLoader(Dataset):
         self.train = train_data
         self.test = test_data
         data_len = len(self.train)
-        self.val = self.train[(int)(data_len * 0.8):]
+        self._val_start = int(data_len * 0.8)
+        self.val = self.train[self._val_start:]
+        # Treat test split as continuing global time after train for index-based context.
+        self._test_time_offset = len(self.train)
         self.test_labels = labels
         print("test:", self.test.shape)
         print("train:", self.train.shape)
@@ -301,16 +329,27 @@ class SWATSegLoader(Dataset):
     def __getitem__(self, index):
         index = index * self.step
         if self.flag == "train":
-            return np.float32(self.train[index:index + self.win_size]), np.float32(self.test_labels[0:self.win_size])
+            x = np.float32(self.train[index:index + self.win_size])
+            context = _build_global_multiscale_context(index, self.win_size, period1=1440, period2=720)
+            label = np.float32(self.test_labels[0:self.win_size])
+            return x, context, label
         elif (self.flag == 'val'):
-            return np.float32(self.val[index:index + self.win_size]), np.float32(self.test_labels[0:self.win_size])
+            x = np.float32(self.val[index:index + self.win_size])
+            context = _build_global_multiscale_context(self._val_start + index, self.win_size, period1=1440, period2=720)
+            label = np.float32(self.test_labels[0:self.win_size])
+            return x, context, label
         elif (self.flag == 'test'):
-            return np.float32(self.test[index:index + self.win_size]), np.float32(
-                self.test_labels[index:index + self.win_size])
+            x = np.float32(self.test[index:index + self.win_size])
+            context = _build_global_multiscale_context(self._test_time_offset + index, self.win_size, period1=1440, period2=720)
+            label = np.float32(self.test_labels[index:index + self.win_size])
+            return x, context, label
         else:
-            return np.float32(self.test[
-                              index // self.step * self.win_size:index // self.step * self.win_size + self.win_size]), np.float32(
-                self.test_labels[index // self.step * self.win_size:index // self.step * self.win_size + self.win_size])
+            start = index // self.step * self.win_size
+            end = start + self.win_size
+            x = np.float32(self.test[start:end])
+            context = _build_global_multiscale_context(self._test_time_offset + start, self.win_size, period1=1440, period2=720)
+            label = np.float32(self.test_labels[start:end])
+            return x, context, label
             
 class NIPS_TS_SwanSegLoader(object):
     def __init__(self, data_path, win_size, step, mode="train"):

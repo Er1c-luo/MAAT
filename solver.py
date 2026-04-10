@@ -99,9 +99,13 @@ class Solver(object):
             self.model.cuda()
 
     def _fallback_context(self, batch_size):
-        # Backward-compatible fallback context if loader still yields (x, label).
+        # Backward-compatible fallback context with 4 dims (day + halfday sin/cos).
         phase = torch.arange(self.win_size, device=self.device, dtype=torch.float32) / float(self.win_size)
-        context = torch.stack([torch.sin(2 * math.pi * phase), torch.cos(2 * math.pi * phase)], dim=-1)
+        phase_half = torch.remainder(2.0 * phase, 1.0)
+        context = torch.stack([
+            torch.sin(2 * math.pi * phase), torch.cos(2 * math.pi * phase),
+            torch.sin(2 * math.pi * phase_half), torch.cos(2 * math.pi * phase_half),
+        ], dim=-1)
         return context.unsqueeze(0).repeat(batch_size, 1, 1)
 
 
