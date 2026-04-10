@@ -93,7 +93,7 @@ class MambaAnomalyTransformer(nn.Module):
 
         # Pure context branch (Version B): C -> z_c -> FiLM params on x_emb
         d_ctx = 32
-        self.context_encoder = LightweightContextBranchEncoder(c_dim=2, d_ctx=d_ctx, nhead=2, dropout=0.1)
+        self.context_encoder = LightweightContextBranchEncoder(c_dim=4, d_ctx=d_ctx, nhead=2, dropout=0.1)
         self.gamma_proj = nn.Linear(d_ctx, d_model)
         self.beta_proj = nn.Linear(d_ctx, d_model)
 
