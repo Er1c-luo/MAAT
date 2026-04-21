@@ -42,6 +42,10 @@ if __name__ == '__main__':
     parser.add_argument('--anormly_ratio', type=float, default=4.00)
     parser.add_argument('--gpu_index', type=int, default=0, help='Index of the GPU to use')
     parser.add_argument('--multi_gpu', type=str2bool, default=True, help='Enable multi-GPU training')
+    # Context ablation switch; all modes keep context shape = [win_size, 4].
+    parser.add_argument('--context_mode', type=str, default='global_multiscale',
+                        choices=['none', 'constant', 'local_phase', 'global_multiscale', 'real_timestamp'],
+                        help='Which context feature to feed the FiLM branch with.')
     config = parser.parse_args()
 
     args = vars(config)

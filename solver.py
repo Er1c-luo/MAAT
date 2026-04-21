@@ -65,19 +65,27 @@ class Solver(object):
     def __init__(self, config):
 
         self.__dict__.update(Solver.DEFAULTS, **config)
+        # Context-ablation switch, defaults to the current production mode.
+        if not hasattr(self, 'context_mode') or self.context_mode is None:
+            self.context_mode = 'global_multiscale'
+        print(f"[context] mode = {self.context_mode}")
 
         self.train_loader = get_loader_segment(self.data_path, batch_size=self.batch_size, win_size=self.win_size,
                                                mode='train',
-                                               dataset=self.dataset)
+                                               dataset=self.dataset,
+                                               context_mode=self.context_mode)
         self.vali_loader = get_loader_segment(self.data_path, batch_size=self.batch_size, win_size=self.win_size,
                                               mode='val',
-                                              dataset=self.dataset)
+                                              dataset=self.dataset,
+                                              context_mode=self.context_mode)
         self.test_loader = get_loader_segment(self.data_path, batch_size=self.batch_size, win_size=self.win_size,
                                               mode='test',
-                                              dataset=self.dataset)
+                                              dataset=self.dataset,
+                                              context_mode=self.context_mode)
         self.thre_loader = get_loader_segment(self.data_path, batch_size=self.batch_size, win_size=self.win_size,
                                               mode='thre',
-                                              dataset=self.dataset)
+                                              dataset=self.dataset,
+                                              context_mode=self.context_mode)
 
         self.build_model()
         gpu_index = self.get_gpu_index()
@@ -99,13 +107,23 @@ class Solver(object):
             self.model.cuda()
 
     def _fallback_context(self, batch_size):
-        # Backward-compatible fallback context with 4 dims (day + halfday sin/cos).
-        phase = torch.arange(self.win_size, device=self.device, dtype=torch.float32) / float(self.win_size)
-        phase_half = torch.remainder(2.0 * phase, 1.0)
-        context = torch.stack([
-            torch.sin(2 * math.pi * phase), torch.cos(2 * math.pi * phase),
-            torch.sin(2 * math.pi * phase_half), torch.cos(2 * math.pi * phase_half),
-        ], dim=-1)
+        # Backward-compatible fallback context with 4 dims, honoring self.context_mode.
+        # Used only for loaders that still emit (x, label) (e.g. NIPS_TS_*).
+        mode = getattr(self, 'context_mode', 'global_multiscale')
+        L = self.win_size
+        if mode == 'none':
+            context = torch.zeros(L, 4, device=self.device, dtype=torch.float32)
+        elif mode == 'constant':
+            context = torch.ones(L, 4, device=self.device, dtype=torch.float32)
+        else:
+            # local_phase / global_multiscale / real_timestamp all degrade to the same
+            # window-local day+halfday view here, since we have no global index / timestamp.
+            phase = torch.arange(L, device=self.device, dtype=torch.float32) / float(L)
+            phase_half = torch.remainder(2.0 * phase, 1.0)
+            context = torch.stack([
+                torch.sin(2 * math.pi * phase), torch.cos(2 * math.pi * phase),
+                torch.sin(2 * math.pi * phase_half), torch.cos(2 * math.pi * phase_half),
+            ], dim=-1)
         return context.unsqueeze(0).repeat(batch_size, 1, 1)
 
 
